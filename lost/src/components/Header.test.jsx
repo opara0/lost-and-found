@@ -11,7 +11,7 @@ vi.mock('../supabase', () => ({
             onAuthStateChange: vi.fn((callback) => {
                 authListener.callback = callback
                 return { data: { subscription: { unsubscribe: vi.fn() } } }
-            }),
+            })
         },
     },
 }))

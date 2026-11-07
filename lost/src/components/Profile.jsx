@@ -6,6 +6,8 @@ import ProfileIdentity from './ProfileIdentity'
 
 const MEDIA_BUCKET = 'lost-found-media'
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024
+const MAX_POST_QUESTIONS = 5
+const MAX_POST_QUESTION_LENGTH = 200
 
 function createId() {
     if (typeof globalThis.crypto?.randomUUID === 'function') {
@@ -38,10 +40,122 @@ export default function Profile() {
     const [avatarPreview, setAvatarPreview] = useState('')
     const [profileError, setProfileError] = useState('')
     const [isSaving, setIsSaving] = useState(false)
+    const [editingPostId, setEditingPostId] = useState(null)
+    const [postDraft, setPostDraft] = useState(null)
+    const [postActionError, setPostActionError] = useState('')
+    const [postActionMessage, setPostActionMessage] = useState('')
+    const [isSavingPost, setIsSavingPost] = useState(false)
+    const [deletingPostId, setDeletingPostId] = useState(null)
+    const [confirmDeletePostId, setConfirmDeletePostId] = useState(null)
+    const [updatedPosts, setUpdatedPosts] = useState({})
+    const [deletedPostIds, setDeletedPostIds] = useState([])
     const { items, loading, error } = useItems({
         userId: user?.id,
         enabled: Boolean(user?.id),
     })
+    const visibleItems = items
+        .filter((item) => !deletedPostIds.includes(item.id))
+        .map((item) => updatedPosts[item.id] ?? item)
+
+    function startEditingPost(item) {
+        setEditingPostId(item.id)
+        setPostDraft({
+            description: item.desc,
+            location: item.location ?? '',
+            questions: item.questions.length > 0 ? [...item.questions] : [''],
+        })
+        setPostActionError('')
+        setPostActionMessage('')
+        setConfirmDeletePostId(null)
+    }
+
+    function cancelEditingPost() {
+        setEditingPostId(null)
+        setPostDraft(null)
+        setPostActionError('')
+    }
+
+    async function savePost(event, item) {
+        event.preventDefault()
+        if (!postDraft || !user) return
+
+        const description = postDraft.description.trim()
+        const questions = postDraft.questions.map((question) => question.trim()).filter(Boolean)
+        if (!description) {
+            setPostActionError('Add a description before saving your post.')
+            return
+        }
+        if (questions.length === 0 || questions.length > MAX_POST_QUESTIONS) {
+            setPostActionError(`Add between 1 and ${MAX_POST_QUESTIONS} questions for claimers.`)
+            return
+        }
+        if (questions.some((question) => question.length > MAX_POST_QUESTION_LENGTH)) {
+            setPostActionError(`Questions must be ${MAX_POST_QUESTION_LENGTH} characters or fewer.`)
+            return
+        }
+
+        setIsSavingPost(true)
+        setPostActionError('')
+        setPostActionMessage('')
+        try {
+            const changes = {
+                description,
+                location: postDraft.location.trim(),
+                questions,
+            }
+            const { data, error: updateError } = await supabase
+                .from('posts')
+                .update(changes)
+                .eq('id', item.id)
+                .eq('user_id', user.id)
+                .select('id')
+                .maybeSingle()
+
+            if (updateError) throw updateError
+            if (!data) throw new Error('Post could not be updated. It may have been removed or is no longer yours.')
+
+            setUpdatedPosts((current) => ({
+                ...current,
+                [item.id]: { ...item, desc: changes.description, location: changes.location, questions },
+            }))
+            setEditingPostId(null)
+            setPostDraft(null)
+            setPostActionMessage('Post updated successfully.')
+        } catch (saveError) {
+            setPostActionError(saveError instanceof Error ? saveError.message : 'Could not update your post.')
+        } finally {
+            setIsSavingPost(false)
+        }
+    }
+
+    async function deletePost(item) {
+        if (!user) return
+
+        setDeletingPostId(item.id)
+        setPostActionError('')
+        setPostActionMessage('')
+        try {
+            const { data, error: deleteError } = await supabase
+                .from('posts')
+                .delete()
+                .eq('id', item.id)
+                .eq('user_id', user.id)
+                .select('id')
+                .maybeSingle()
+
+            if (deleteError) throw deleteError
+            if (!data) throw new Error('Post could not be deleted. It may have been removed or is no longer yours.')
+
+            setDeletedPostIds((current) => [...current, item.id])
+            setConfirmDeletePostId(null)
+            if (editingPostId === item.id) cancelEditingPost()
+            setPostActionMessage('Post deleted successfully.')
+        } catch (deleteError) {
+            setPostActionError(deleteError instanceof Error ? deleteError.message : 'Could not delete your post.')
+        } finally {
+            setDeletingPostId(null)
+        }
+    }
 
     useEffect(() => {
         let isActive = true
@@ -297,16 +411,18 @@ export default function Profile() {
                 </section>
 
                 <section className="mt-6">
-                    <h2 className="mb-4 text-xl font-bold">Your posts ({items.length})</h2>
+                    <h2 className="mb-4 text-xl font-bold">Your posts ({visibleItems.length})</h2>
                     {loading && <p>Loading your posts...</p>}
                     {error && <p role="alert">Could not load your posts: {error}</p>}
-                    {!loading && !error && items.length === 0 && (
+                    {postActionError && <p className="mb-3 text-sm text-red-700" role="alert">{postActionError}</p>}
+                    {postActionMessage && <p className="mb-3 text-sm text-emerald-700" role="status">{postActionMessage}</p>}
+                    {!loading && !error && visibleItems.length === 0 && (
                         <p className="rounded-xl bg-white p-5 text-slate-600">
                             You haven&apos;t posted anything yet. Your posts will appear here.
                         </p>
                     )}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        {items.map((item) => (
+                        {visibleItems.map((item) => (
                             <article
                                 onClick={() => navigate(`/items/${item.id}`)}
                                 key={item.id}
@@ -330,6 +446,141 @@ export default function Profile() {
                                 )}
                                 <h3 className="mt-2 font-semibold">{item.desc}</h3>
                                 {item.location && <p className="mt-1 text-sm text-slate-600">{item.location}</p>}
+                                {editingPostId === item.id && postDraft ? (
+                                    <form
+                                        className="mt-4 space-y-3 border-t border-slate-200 pt-4"
+                                        onClick={(event) => event.stopPropagation()}
+                                        onSubmit={(event) => savePost(event, item)}
+                                    >
+                                        <label className="block text-sm font-medium text-slate-700">
+                                            Description
+                                            <input
+                                                required
+                                                value={postDraft.description}
+                                                onChange={(event) => setPostDraft((current) => ({
+                                                    ...current,
+                                                    description: event.target.value,
+                                                }))}
+                                                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                                            />
+                                        </label>
+                                        <label className="block text-sm font-medium text-slate-700">
+                                            Location
+                                            <input
+                                                value={postDraft.location}
+                                                onChange={(event) => setPostDraft((current) => ({
+                                                    ...current,
+                                                    location: event.target.value,
+                                                }))}
+                                                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                                            />
+                                        </label>
+                                        <fieldset className="space-y-2">
+                                            <legend className="text-sm font-medium text-slate-700">Questions for claimers</legend>
+                                            {postDraft.questions.map((question, index) => (
+                                                <div key={index} className="flex items-center gap-2">
+                                                    <input
+                                                        required
+                                                        maxLength={MAX_POST_QUESTION_LENGTH}
+                                                        aria-label={`Question ${index + 1}`}
+                                                        value={question}
+                                                        onChange={(event) => setPostDraft((current) => ({
+                                                            ...current,
+                                                            questions: current.questions.map((currentQuestion, questionIndex) => (
+                                                                questionIndex === index ? event.target.value : currentQuestion
+                                                            )),
+                                                        }))}
+                                                        className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                                    />
+                                                    {postDraft.questions.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPostDraft((current) => ({
+                                                                ...current,
+                                                                questions: current.questions.filter((_, questionIndex) => questionIndex !== index),
+                                                            }))}
+                                                            className="shrink-0 text-sm font-semibold text-red-700 hover:text-red-900"
+                                                            aria-label={`Remove question ${index + 1}`}
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            {postDraft.questions.length < MAX_POST_QUESTIONS && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPostDraft((current) => ({
+                                                        ...current,
+                                                        questions: [...current.questions, ''],
+                                                    }))}
+                                                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                                                >
+                                                    Add question
+                                                </button>
+                                            )}
+                                        </fieldset>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                type="submit"
+                                                disabled={isSavingPost}
+                                                className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+                                            >
+                                                {isSavingPost ? 'Saving...' : 'Save changes'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={isSavingPost}
+                                                onClick={cancelEditingPost}
+                                                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </form>
+                                ) : (
+                                    <div
+                                        className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4"
+                                        onClick={(event) => event.stopPropagation()}
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => startEditingPost(item)}
+                                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                                        >
+                                            Edit post
+                                        </button>
+                                        {confirmDeletePostId === item.id ? (
+                                            <>
+                                                <span className="text-sm text-slate-600">Delete this post?</span>
+                                                <button
+                                                    type="button"
+                                                    disabled={deletingPostId === item.id}
+                                                    onClick={() => deletePost(item)}
+                                                    className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-60"
+                                                >
+                                                    {deletingPostId === item.id ? 'Deleting...' : 'Confirm delete'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={deletingPostId === item.id}
+                                                    onClick={() => setConfirmDeletePostId(null)}
+                                                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => setConfirmDeletePostId(item.id)}
+                                                className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                            >
+                                                Delete post
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </article>
                         ))}
                     </div>
