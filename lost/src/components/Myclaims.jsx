@@ -63,6 +63,8 @@ export default function Myclaims() {
     const [reviewingClaimId, setReviewingClaimId] = useState('')
     const [withdrawingClaimId, setWithdrawingClaimId] = useState('')
     const [confirmWithdrawClaimId, setConfirmWithdrawClaimId] = useState('')
+    const [removingClaimId, setRemovingClaimId] = useState('')
+    const [confirmRemoveClaimId, setConfirmRemoveClaimId] = useState('')
     const [message, setMessage] = useState('')
 
     useEffect(() => {
@@ -94,8 +96,9 @@ export default function Myclaims() {
                     .eq('user_id', currentUser.id),
                 supabase
                     .from('claim_answers')
-                    .select('id, post_id, claimer_id, answers, status, created_at')
+                    .select('id, post_id, claimer_id, answers, status, created_at, claimer_hidden_at')
                     .eq('claimer_id', currentUser.id)
+                    .is('claimer_hidden_at', null)
                     .order('created_at', { ascending: false }),
             ])
 
@@ -216,6 +219,11 @@ export default function Myclaims() {
                 table: 'claim_answers',
                 filter: `claimer_id=eq.${user.id}`,
             }, async ({ new: claim }) => {
+                if (claim.claimer_hidden_at) {
+                    setMyClaims((current) => current.filter((existingClaim) => existingClaim.id !== claim.id))
+                    return
+                }
+
                 setMyClaims((current) => current.map((existingClaim) => (
                     existingClaim.id === claim.id
                         ? { ...existingClaim, status: claim.status }
@@ -299,6 +307,26 @@ export default function Myclaims() {
             setError(withdrawError instanceof Error ? withdrawError.message : 'Could not withdraw the claim.')
         } finally {
             setWithdrawingClaimId('')
+        }
+    }
+
+    async function removeRejectedClaim(claimId) {
+        setRemovingClaimId(claimId)
+        setError('')
+        setMessage('')
+        try {
+            const { error: removeError } = await supabase.rpc('hide_rejected_claim', {
+                p_claim_id: claimId,
+            })
+            if (removeError) throw removeError
+
+            setMyClaims((current) => current.filter((claim) => claim.id !== claimId))
+            setConfirmRemoveClaimId('')
+            setMessage('Rejected claim removed from your list.')
+        } catch (removeError) {
+            setError(removeError instanceof Error ? removeError.message : 'Could not remove the rejected claim.')
+        } finally {
+            setRemovingClaimId('')
         }
     }
 
@@ -409,9 +437,41 @@ export default function Myclaims() {
                                             Open chat
                                         </Link>
                                     )}
-                                    {['pending', 'accepted'].includes(claim.status) && (
+                                    {['pending', 'accepted', 'rejected'].includes(claim.status) && (
                                         <div className="border-t border-slate-100 pt-4">
-                                            {confirmWithdrawClaimId === claim.id ? (
+                                            {claim.status === 'rejected' ? (
+                                                confirmRemoveClaimId === claim.id ? (
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <p className="text-sm text-slate-700">
+                                                            Remove this rejected claim from your list? The claim record will be kept.
+                                                        </p>
+                                                        <button
+                                                            type="button"
+                                                            disabled={Boolean(removingClaimId)}
+                                                            onClick={() => removeRejectedClaim(claim.id)}
+                                                            className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-60"
+                                                        >
+                                                            {removingClaimId === claim.id ? 'Removing...' : 'Confirm removal'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={Boolean(removingClaimId)}
+                                                            onClick={() => setConfirmRemoveClaimId('')}
+                                                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
+                                                        >
+                                                            Keep claim
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setConfirmRemoveClaimId(claim.id)}
+                                                        className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                                    >
+                                                        Remove claim
+                                                    </button>
+                                                )
+                                            ) : confirmWithdrawClaimId === claim.id ? (
                                                 <div className="flex flex-wrap items-center gap-3">
                                                     <p className="text-sm text-slate-700">
                                                         Withdraw this claim? The conversation history will remain available.
