@@ -1,10 +1,10 @@
 import Photo from '../assets/vadim-sherbakov-tCICLJ5ktBE-unsplash.jpg'
 export default function Homepage() {
     return (
-        <main className="max-h-screen bg-[#F9F6F0]">
-            <div className="relative">
+        <main>
+            <div className="relative min-h-[calc(100dvh-7.5rem)] md:min-h-[calc(100dvh-3rem)]">
                 <img
-                    className="h-[400px] w-full object-cover md:h-96 lg:h-[500px]"
+                    className="absolute inset-0 h-full w-full object-cover"
                     src={Photo}
                     alt="A lost item"
                 />

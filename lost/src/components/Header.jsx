@@ -4,12 +4,15 @@ import AuthModal from "./AuthModal"
 import supabase from "../supabase"
 
 export default function Header() {
-    const [open, setOpen] = useState(false)
     const [authMode, setAuthMode] = useState(null)
+    const [isAuthInitialized, setIsAuthInitialized] = useState(false)
+    const [user, setUser] = useState(null)
     const navigate = useNavigate()
 
     useEffect(() => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null)
+            setIsAuthInitialized(true)
             if (session) setAuthMode(null)
         })
 
@@ -17,7 +20,7 @@ export default function Header() {
     }, [])
 
     return (
-        <header className="sticky left-0 top-0 z-50 flex w-full items-center justify-between border-b border-slate-500 bg-white px-8 py-4">
+        <header className="sticky left-0 top-0 z-50 flex w-full items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-8">
             <button
                 type="button"
                 onClick={() => navigate('/')}
@@ -26,93 +29,23 @@ export default function Header() {
                 Lost and Found
             </button>
 
-            <div className="flex items-center gap-4">
-                <button
-                    type="button"
-                    aria-label="Home"
-                    onClick={() => navigate('/')}
-                    className="transition duration-200 hover:brightness-90 hover:opacity-70"
-                >
-                    <i className="fa-solid fa-house" aria-hidden="true"></i>
-                </button>
-
-                <button
-                    type="button"
-                    aria-label="Profile"
-                    onClick={() => navigate('/profile')}
-                    className="transition duration-200 hover:brightness-90 hover:opacity-70"
-                >
-                    <i className="fa-regular fa-user" aria-hidden="true"></i>
-                </button>
-                <button
-                    type="button"
-                    aria-label={open ? "Close menu" : "Open menu"}
-                    aria-expanded={open}
-                    onClick={() => setOpen((isOpen) => !isOpen)}
-                    className="transition duration-200 hover:brightness-90 hover:opacity-70"
-                >
-                    <i
-                        className={`fa-solid ${open ? "fa-xmark" : "fa-bars"}`}
-                        aria-hidden="true"
-                    ></i>
-                </button>
-            </div>
-            {open && (
-                <nav className="absolute right-8 top-full flex flex-col gap-2 border border-slate-200 bg-white px-4 py-2 shadow-lg">
-
+            {isAuthInitialized && !user && (
+                <div className="flex items-center gap-2 sm:gap-3">
                     <button
                         type="button"
-                        onClick={() => {
-                            navigate('/items')
-                            setOpen(false)
-                        }}
-                        className="m-1 px-3 py-1 text-left transition duration-200 hover:brightness-90 hover:opacity-70"
+                        onClick={() => setAuthMode("login")}
+                        className="rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 sm:px-3"
                     >
-                        Items
+                        LOG IN
                     </button>
                     <button
                         type="button"
-                        onClick={() => {
-                            navigate('/report-found')
-                            setOpen(false)
-                        }}
-                        className="m-1 px-3 py-1 text-left transition duration-200 hover:brightness-90 hover:opacity-70"
+                        onClick={() => setAuthMode("signup")}
+                        className="rounded-lg bg-emerald-700 px-2 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-800 sm:px-3"
                     >
-                        Report Found
+                        SIGN UP
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            navigate('/my-claims')
-                            setOpen(false)
-                        }}
-                        className="m-1 px-3 py-1 text-left transition duration-200 hover:brightness-90 hover:opacity-70"
-                    >
-                        My claims
-                    </button>
-                    <div className="flex flex-row gap-2">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setAuthMode("login")
-                                setOpen(false)
-                            }}
-                            className="rounded-lg bg-slate-100 px-3 py-2 shadow-md transition duration-200 hover:brightness-90 hover:opacity-70"
-                        >
-                            LOG IN
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setAuthMode("signup")
-                                setOpen(false)
-                            }}
-                            className="rounded-lg bg-emerald-700 px-3 py-2 text-white shadow-md transition duration-200 hover:brightness-90 hover:opacity-70"
-                        >
-                            SIGN UP
-                        </button>
-                    </div>
-                </nav>
+                </div>
             )}
             {authMode && (
                 <AuthModal initialMode={authMode} onClose={() => setAuthMode(null)} />

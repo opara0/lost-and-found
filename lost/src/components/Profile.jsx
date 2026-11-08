@@ -40,6 +40,7 @@ export default function Profile() {
     const [avatarPreview, setAvatarPreview] = useState('')
     const [profileError, setProfileError] = useState('')
     const [isSaving, setIsSaving] = useState(false)
+    const [isSigningOut, setIsSigningOut] = useState(false)
     const [editingPostId, setEditingPostId] = useState(null)
     const [postDraft, setPostDraft] = useState(null)
     const [postActionError, setPostActionError] = useState('')
@@ -276,6 +277,20 @@ export default function Profile() {
         }
     }
 
+    async function signOut() {
+        setIsSigningOut(true)
+        setProfileError('')
+        try {
+            const { error: signOutError } = await supabase.auth.signOut()
+            if (signOutError) throw signOutError
+            navigate('/')
+        } catch (signOutError) {
+            setProfileError(signOutError instanceof Error ? signOutError.message : 'Could not log out.')
+        } finally {
+            setIsSigningOut(false)
+        }
+    }
+
     const displayName = [firstName, lastName].filter(Boolean).join(' ') || 'Your profile'
     const shownAvatar = avatarPreview || avatarUrl
 
@@ -392,13 +407,23 @@ export default function Profile() {
                                             <h1 className="text-3xl font-bold text-slate-900">{displayName}</h1>
                                             <p className="mt-1 break-all text-sm text-slate-500">User ID: {user.id}</p>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsEditing(true)}
-                                            className="rounded-lg border border-slate-300 px-4 py-2 font-semibold hover:bg-slate-50"
-                                        >
-                                            Edit profile
-                                        </button>
+                                        <div className="flex flex-wrap justify-center gap-2 sm:justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsEditing(true)}
+                                                className="rounded-lg border border-slate-300 px-4 py-2 font-semibold hover:bg-slate-50"
+                                            >
+                                                Edit profile
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={signOut}
+                                                disabled={isSigningOut}
+                                                className="rounded-lg border border-red-200 px-4 py-2 font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-60"
+                                            >
+                                                {isSigningOut ? 'Logging out...' : 'Log out'}
+                                            </button>
+                                        </div>
                                     </div>
                                     <p className="mt-4 whitespace-pre-wrap text-slate-700">
                                         {bio || 'Add a short bio to tell people about yourself.'}

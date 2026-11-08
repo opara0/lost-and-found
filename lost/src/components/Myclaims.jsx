@@ -41,6 +41,8 @@ function StatusBadge({ status }) {
         ? 'bg-emerald-100 text-emerald-800'
         : status === 'rejected'
             ? 'bg-red-100 text-red-800'
+            : status === 'withdrawn'
+                ? 'bg-slate-100 text-slate-700'
             : 'bg-amber-100 text-amber-800'
 
     return (
@@ -59,6 +61,8 @@ export default function Myclaims() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [reviewingClaimId, setReviewingClaimId] = useState('')
+    const [withdrawingClaimId, setWithdrawingClaimId] = useState('')
+    const [confirmWithdrawClaimId, setConfirmWithdrawClaimId] = useState('')
     const [message, setMessage] = useState('')
 
     useEffect(() => {
@@ -276,6 +280,28 @@ export default function Myclaims() {
         }
     }
 
+    async function withdrawClaim(claimId) {
+        setWithdrawingClaimId(claimId)
+        setError('')
+        setMessage('')
+        try {
+            const { error: withdrawError } = await supabase.rpc('withdraw_claim', {
+                p_claim_id: claimId,
+            })
+            if (withdrawError) throw withdrawError
+
+            setMyClaims((current) => current.map((claim) => (
+                claim.id === claimId ? { ...claim, status: 'withdrawn' } : claim
+            )))
+            setConfirmWithdrawClaimId('')
+            setMessage('Claim withdrawn. Your conversation history is preserved.')
+        } catch (withdrawError) {
+            setError(withdrawError instanceof Error ? withdrawError.message : 'Could not withdraw the claim.')
+        } finally {
+            setWithdrawingClaimId('')
+        }
+    }
+
     if (loading) {
         return <main className="mx-auto min-h-screen max-w-5xl px-4 pt-24">Loading claims...</main>
     }
@@ -382,6 +408,41 @@ export default function Myclaims() {
                                         >
                                             Open chat
                                         </Link>
+                                    )}
+                                    {['pending', 'accepted'].includes(claim.status) && (
+                                        <div className="border-t border-slate-100 pt-4">
+                                            {confirmWithdrawClaimId === claim.id ? (
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <p className="text-sm text-slate-700">
+                                                        Withdraw this claim? The conversation history will remain available.
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        disabled={Boolean(withdrawingClaimId)}
+                                                        onClick={() => withdrawClaim(claim.id)}
+                                                        className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-60"
+                                                    >
+                                                        {withdrawingClaimId === claim.id ? 'Withdrawing...' : 'Confirm withdrawal'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={Boolean(withdrawingClaimId)}
+                                                        onClick={() => setConfirmWithdrawClaimId('')}
+                                                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
+                                                    >
+                                                        Keep claim
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setConfirmWithdrawClaimId(claim.id)}
+                                                    className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                                >
+                                                    Withdraw claim
+                                                </button>
+                                            )}
+                                        </div>
                                     )}
                                 </article>
                             ))}
